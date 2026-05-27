@@ -1,0 +1,376 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="To Do List">
+<title>To Do List</title>
+<style>
+  :root {
+    font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    font-size: 17px;
+    -webkit-text-size-adjust: 100%;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; padding: 14px; background: #fff; color: #000; }
+
+  .row {
+    padding: 6px 0;
+    border-bottom: 1px solid #eee;
+  }
+  .row .line1 { display: flex; align-items: center; }
+  .row .line1 .spacer { flex: 1; }
+  .row input, .row button {
+    font: inherit;
+    color: inherit;
+    background: transparent;
+    border: 0;
+    outline: none;
+    padding: 0;
+    margin: 0;
+    -webkit-appearance: none;
+    border-radius: 0;
+  }
+  .row .dd { width: 2.4ch; }
+  .row .mm { width: 3.4ch; }
+  .row .yy { width: 4.4ch; }
+  .row .hh { width: 2.4ch; }
+  .row .mn { width: 2.4ch; }
+  .row .ampm { width: 3ch; text-align: left; cursor: pointer; }
+  .row .gap, .row .colon { display: inline-block; width: 1ch; text-align: center; }
+  .row .name {
+    display: block;
+    width: 100%;
+    margin-top: 3px;
+  }
+  .row button.icon {
+    width: 2.4ch;
+    text-align: center;
+    cursor: pointer;
+    margin-left: 6px;
+  }
+  .row.past input, .row.past .ampm { color: red; }
+  .row.locked input, .row.locked .ampm, .row.locked .del {
+    pointer-events: none;
+    opacity: 0.75;
+  }
+  ::placeholder { color: #aaa; }
+
+  .controls { margin-top: 16px; display: flex; gap: 10px; }
+  .controls button {
+    font: inherit;
+    padding: 6px 14px;
+    background: #f1f1f1;
+    border: 1px solid #ccc;
+    border-radius: 6px;
+    cursor: pointer;
+  }
+
+  #overlay {
+    position: fixed; inset: 0;
+    background: rgba(0,0,0,0.5);
+    display: none;
+    align-items: center; justify-content: center;
+    z-index: 1000;
+  }
+  #overlay.show { display: flex; }
+  #overlay .box {
+    background: #fff;
+    padding: 22px 28px;
+    border-radius: 10px;
+    text-align: center;
+    max-width: 80%;
+    font: inherit;
+    white-space: pre-line;
+  }
+  #overlay button {
+    margin-top: 16px;
+    padding: 6px 26px;
+    font: inherit;
+    border: 1px solid #ccc;
+    border-radius: 6px;
+    background: #f1f1f1;
+    cursor: pointer;
+  }
+</style>
+</head>
+<body>
+
+<div id="rows"></div>
+
+<div class="controls">
+  <button id="addBtn">+ Add row</button>
+  <button id="copyBtn">Copy all</button>
+</div>
+
+<div id="overlay"><div class="box"><div id="overlayMsg"></div><button id="overlayOk">OK</button></div></div>
+
+<script>
+const MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+const STORAGE_KEY = "todo_v1";
+
+let appointments = [];
+const timers = {};
+
+function uid() { return Math.random().toString(36).slice(2, 10); }
+function cap(s) { return s ? s.charAt(0).toUpperCase() + s.slice(1).toLowerCase() : ""; }
+
+function load() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (raw) appointments = JSON.parse(raw);
+  } catch (e) { appointments = []; }
+  appointments.sort((a, b) => (parseDT(a) || 0) - (parseDT(b) || 0));
+  appointments.forEach(a => { a._prevDT = parseDT(a); });
+}
+
+function save() {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(appointments));
+}
+
+function parseDT(a) {
+  const m = MONTHS.indexOf(cap(a.mm || ""));
+  const d = parseInt(a.dd, 10);
+  const y = parseInt(a.yy, 10);
+  let h = parseInt(a.hh, 10);
+  const mn = parseInt(a.mn, 10);
+  if (m < 0 || isNaN(d) || isNaN(y) || isNaN(h) || isNaN(mn)) return null;
+  const ap = (a.ampm || "").toLowerCase();
+  if (ap === "pm" && h !== 12) h += 12;
+  if (ap === "am" && h === 12) h = 0;
+  return new Date(y, m, d, h, mn).getTime();
+}
+
+function isComplete(a) {
+  return parseDT(a) !== null && a.name && a.name.trim();
+}
+
+function escapeAttr(s) {
+  return (s || "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+}
+
+function render() {
+  const cont = document.getElementById("rows");
+  cont.innerHTML = "";
+  appointments.forEach(a => cont.appendChild(makeRow(a)));
+}
+
+function makeRow(a) {
+  const row = document.createElement("div");
+  row.className = "row";
+  row.dataset.id = a.id;
+  row.innerHTML = `
+    <div class="line1">
+      <input class="dd" inputmode="numeric" maxlength="2" placeholder="DD" value="${escapeAttr(a.dd)}" autocorrect="off" autocomplete="off">
+      <input class="mm" maxlength="3" placeholder="MMM" value="${escapeAttr(a.mm)}" autocorrect="off" autocomplete="off">
+      <input class="yy" inputmode="numeric" maxlength="4" placeholder="YYYY" value="${escapeAttr(a.yy)}" autocorrect="off" autocomplete="off">
+      <span class="gap"> </span>
+      <input class="hh" inputmode="numeric" maxlength="2" placeholder="HH" value="${escapeAttr(a.hh)}" autocorrect="off" autocomplete="off">
+      <span class="colon">:</span>
+      <input class="mn" inputmode="numeric" maxlength="2" placeholder="MM" value="${escapeAttr(a.mn)}" autocorrect="off" autocomplete="off">
+      <button class="ampm">${(a.ampm || "am").toLowerCase()}</button>
+      <div class="spacer"></div>
+      <button class="icon lock">${a.locked ? "\u{1F512}" : "\u{1F513}"}</button>
+      <button class="icon del">×</button>
+    </div>
+    <input class="name" placeholder="Name" value="${escapeAttr(a.name)}">
+  `;
+  bindRow(row, a);
+  applyLockUI(row, a);
+  applyColorUI(row, a);
+  return row;
+}
+
+function bindRow(row, a) {
+  const $ = sel => row.querySelector(sel);
+  const dd = $(".dd"), mm = $(".mm"), yy = $(".yy"),
+        hh = $(".hh"), mn = $(".mn"),
+        ampm = $(".ampm"), name = $(".name"),
+        lock = $(".lock"), del = $(".del");
+
+  function digitsOnly(inp, next, max) {
+    inp.addEventListener("input", () => {
+      let v = inp.value.replace(/\D/g, "").slice(0, max);
+      inp.value = v;
+      if (v.length === max && next) next.focus();
+    });
+  }
+  digitsOnly(dd, mm, 2);
+  digitsOnly(yy, hh, 4);
+  digitsOnly(hh, mn, 2);
+  digitsOnly(mn, name, 2);
+
+  mm.addEventListener("input", () => {
+    let v = mm.value.replace(/[^A-Za-z]/g, "").toLowerCase().slice(0, 3);
+    const matches = MONTHS.filter(m => m.toLowerCase().startsWith(v));
+    if (matches.length === 1 && v.length > 0) {
+      mm.value = matches[0];
+      yy.focus();
+    } else {
+      mm.value = cap(v);
+    }
+  });
+
+  function commit() {
+    a.dd = dd.value; a.mm = mm.value; a.yy = yy.value;
+    a.hh = hh.value; a.mn = mn.value; a.name = name.value;
+    const newDT = parseDT(a);
+    if (a._prevDT !== undefined && newDT !== a._prevDT) {
+      // datetime actually changed — fresh appointment, allow reminders again
+      a.notified_24h = a.notified_2h = a.notified_now = false;
+    }
+    a._prevDT = newDT;
+    save();
+    applyColorUI(row, a);
+    scheduleAppt(a);
+  }
+  [dd, mm, yy, hh, mn, name].forEach(inp => inp.addEventListener("blur", commit));
+
+  ampm.addEventListener("click", () => {
+    if (a.locked) return;
+    a.ampm = (a.ampm === "am" ? "pm" : "am");
+    ampm.textContent = a.ampm;
+    commit();
+  });
+
+  lock.addEventListener("click", () => {
+    a.locked = !a.locked;
+    lock.textContent = a.locked ? "\u{1F512}" : "\u{1F513}";
+    applyLockUI(row, a);
+    save();
+  });
+
+  del.addEventListener("click", () => {
+    if (a.locked) return;
+    cancelTimers(a.id);
+    appointments = appointments.filter(x => x.id !== a.id);
+    save();
+    row.remove();
+  });
+}
+
+function applyLockUI(row, a) {
+  row.classList.toggle("locked", !!a.locked);
+}
+
+function applyColorUI(row, a) {
+  const t = parseDT(a);
+  row.classList.toggle("past", t !== null && t <= Date.now());
+}
+
+function refreshAllColors() {
+  document.querySelectorAll(".row").forEach(row => {
+    const a = appointments.find(x => x.id === row.dataset.id);
+    if (a) applyColorUI(row, a);
+  });
+}
+
+// --- Reminders / timers ---
+
+function cancelTimers(id) {
+  if (!timers[id]) return;
+  timers[id].forEach(t => clearTimeout(t));
+  delete timers[id];
+}
+
+function scheduleAppt(a) {
+  cancelTimers(a.id);
+  if (!isComplete(a)) return;
+  const t = parseDT(a);
+  if (t === null) return;
+  const now = Date.now();
+  timers[a.id] = [];
+  scheduleOne(a, "24h", t - 24*60*60*1000 - now);
+  scheduleOne(a, "2h",  t - 2*60*60*1000 - now);
+  scheduleOne(a, "now", t - now);
+}
+
+function scheduleOne(a, kind, delay) {
+  const flag = kind === "24h" ? "notified_24h" : kind === "2h" ? "notified_2h" : "notified_now";
+  if (a[flag]) return;
+  if (delay <= 0) return;  // moment is already in the past — don't fire
+  const id = setTimeout(() => doFire(a, kind), delay);
+  timers[a.id].push(id);
+}
+
+function doFire(a, kind) {
+  const flag = kind === "24h" ? "notified_24h" : kind === "2h" ? "notified_2h" : "notified_now";
+  if (a[flag]) return;
+  a[flag] = true;
+  save();
+  refreshAllColors();
+  const when = kind === "24h" ? "Tomorrow" : kind === "2h" ? "Today" : "Now!";
+  const msg = `${a.name}\n${when} (${a.hh}:${a.mn} ${a.ampm})`;
+  if (window.Notification && Notification.permission === "granted") {
+    try { new Notification("Reminder", { body: msg }); } catch (e) {}
+  }
+  showOverlay(msg);
+}
+
+function rescheduleAll() {
+  Object.keys(timers).slice().forEach(cancelTimers);
+  appointments.forEach(scheduleAppt);
+}
+
+// --- Overlay ---
+
+const overlayEl = document.getElementById("overlay");
+const overlayQueue = [];
+let overlayShowing = false;
+function showOverlay(msg) {
+  overlayQueue.push(msg);
+  if (!overlayShowing) nextOverlay();
+}
+function nextOverlay() {
+  const msg = overlayQueue.shift();
+  if (!msg) { overlayShowing = false; return; }
+  overlayShowing = true;
+  document.getElementById("overlayMsg").textContent = msg;
+  overlayEl.classList.add("show");
+}
+document.getElementById("overlayOk").addEventListener("click", () => {
+  overlayEl.classList.remove("show");
+  nextOverlay();
+});
+
+// --- Buttons ---
+
+document.getElementById("addBtn").addEventListener("click", () => {
+  const a = { id: uid(), dd:"", mm:"", yy:"", hh:"", mn:"",
+              ampm:"am", name:"", locked:false,
+              notified_24h:false, notified_2h:false, notified_now:false };
+  appointments.push(a);
+  save();
+  const row = makeRow(a);
+  document.getElementById("rows").appendChild(row);
+  row.querySelector(".dd").focus();
+  if (window.Notification && Notification.permission === "default") {
+    Notification.requestPermission().catch(()=>{});
+  }
+});
+
+document.getElementById("copyBtn").addEventListener("click", () => {
+  const lines = appointments.filter(isComplete).map(a =>
+    `${a.dd} ${a.mm} ${a.yy} ${a.hh}:${a.mn} ${a.ampm} ${a.name}`
+  );
+  if (!lines.length) return;
+  navigator.clipboard && navigator.clipboard.writeText(lines.join("\n"));
+});
+
+window.addEventListener("beforeunload", () => {
+  if (document.activeElement && typeof document.activeElement.blur === "function") {
+    document.activeElement.blur();
+  }
+  save();
+});
+
+// --- Boot ---
+
+load();
+render();
+rescheduleAll();
+setInterval(refreshAllColors, 30000);
+</script>
+</body>
+</html>
