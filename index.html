@@ -171,7 +171,7 @@ function makeRow(a) {
       <input class="mn" inputmode="numeric" maxlength="2" placeholder="MM" value="${escapeAttr(a.mn)}" autocorrect="off" autocomplete="off">
       <button class="ampm">${(a.ampm || "am").toLowerCase()}</button>
       <div class="spacer"></div>
-      <button class="icon lock">${a.locked ? "\u{1F512}" : "\u{1F513}"}</button>
+      <button class="icon lock">${a.locked ? "\u{1F512}" : "\u{270F}\u{FE0F}"}</button>
       <button class="icon del">×</button>
     </div>
     <input class="name" placeholder="Name" value="${escapeAttr(a.name)}">
@@ -236,7 +236,7 @@ function bindRow(row, a) {
 
   lock.addEventListener("click", () => {
     a.locked = !a.locked;
-    lock.textContent = a.locked ? "\u{1F512}" : "\u{1F513}";
+    lock.textContent = a.locked ? "\u{1F512}" : "\u{270F}\u{FE0F}";
     applyLockUI(row, a);
     save();
   });
@@ -286,10 +286,12 @@ function scheduleAppt(a) {
   scheduleOne(a, "now", t - now);
 }
 
+const MAX_TIMEOUT = 2147483647;  // setTimeout max (~24.8 days); larger values overflow and fire immediately
 function scheduleOne(a, kind, delay) {
   const flag = kind === "24h" ? "notified_24h" : kind === "2h" ? "notified_2h" : "notified_now";
   if (a[flag]) return;
   if (delay <= 0) return;  // moment is already in the past — don't fire
+  if (delay > MAX_TIMEOUT) return;  // too far in the future — the periodic check will pick it up later
   const id = setTimeout(() => doFire(a, kind), delay);
   timers[a.id].push(id);
 }
@@ -370,7 +372,7 @@ window.addEventListener("beforeunload", () => {
 load();
 render();
 rescheduleAll();
-setInterval(refreshAllColors, 30000);
+setInterval(() => { refreshAllColors(); rescheduleAll(); }, 30000);
 </script>
 </body>
 </html>
