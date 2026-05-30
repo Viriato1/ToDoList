@@ -48,7 +48,7 @@
     width: 2.4ch;
     text-align: center;
     cursor: pointer;
-    margin-left: 6px;
+    margin-right: 6px; /* Changed from margin-left to margin-right for the left placement */
   }
   .row.past input, .row.past .ampm { color: red; }
   .row.locked input, .row.locked .ampm, .row.locked .del {
@@ -160,8 +160,11 @@ function makeRow(a) {
   const row = document.createElement("div");
   row.className = "row";
   row.dataset.id = a.id;
+  // Padlock and Delete buttons moved to the very front, and the spacer moved after the am/pm selector
   row.innerHTML = `
     <div class="line1">
+      <button class="icon lock">${a.locked ? "\u{1F512}" : "\u{270F}\u{FE0F}"}</button>
+      <button class="icon del">×</button>
       <input class="dd" inputmode="numeric" maxlength="2" placeholder="DD" value="${escapeAttr(a.dd)}" autocorrect="off" autocomplete="off">
       <input class="mm" maxlength="3" placeholder="MMM" value="${escapeAttr(a.mm)}" autocorrect="off" autocomplete="off">
       <input class="yy" inputmode="numeric" maxlength="4" placeholder="YYYY" value="${escapeAttr(a.yy)}" autocorrect="off" autocomplete="off">
@@ -171,8 +174,6 @@ function makeRow(a) {
       <input class="mn" inputmode="numeric" maxlength="2" placeholder="MM" value="${escapeAttr(a.mn)}" autocorrect="off" autocomplete="off">
       <button class="ampm">${(a.ampm || "am").toLowerCase()}</button>
       <div class="spacer"></div>
-      <button class="icon lock">${a.locked ? "\u{1F512}" : "\u{270F}\u{FE0F}"}</button>
-      <button class="icon del">×</button>
     </div>
     <input class="name" placeholder="Name" value="${escapeAttr(a.name)}">
   `;
